@@ -31,12 +31,12 @@ float random_float() {
   return (float)random(10001)/10000.0;
 }
 
+// Uses the Box-Muller transform
 float random_z_float() {
-  int rg = 0;
-  for (int i = 0; i < 100; i++) {
-    rg += random(1001);
-  }
-  return ((float)rg-100000)/100000.0;
+  float u1 = random_float();
+  float u2 = random_float();
+  float z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * PI * u2);
+  return z0;
 }
 
 bool motor_is_on = false;
@@ -50,6 +50,7 @@ void motor_state(bool state) {
       // OFF
       digitalWrite(RELAY_PIN, LOW);
     }
+    motor_is_on = state;
   }
 }
 
@@ -57,6 +58,7 @@ void setup() {
   Serial.begin(9600);
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
+  randomSeed(analogRead(0));
 }
 
 bool proximity_active() {
@@ -76,7 +78,7 @@ bool proximity_active() {
 struct mov {
   bool active;
   float proportion;
-  int ttl;
+  float ttl;
 };
 
 // All values follow the Ornstein-Uhlenbeck process
@@ -95,7 +97,9 @@ struct mov hop_vec(struct mov vec) {
   }
 
   vec.proportion = oruhprocess(vec.proportion, MR_SPEED_PROP, AVERAGE_SPEED_PROP, vec.ttl, SD_SPEED_PROP);
+  vec.proportion = constrain(vec.proportion, 0.0, 1.0);
   vec.ttl = oruhprocess(vec.ttl, MR_TIME, AVERAGE_TIME, vec.ttl, SD_TIME);
+  vec.ttl = max(vec.ttl, (float)MIN_MOTOR_CHANGE_MS / 1000.0);
   return vec;
 }
 
