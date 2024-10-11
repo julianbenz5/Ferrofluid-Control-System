@@ -9,7 +9,7 @@
 #define SD_SPEED_PROP        0.35
 #define MR_SPEED_PROP        0.4
 #define AVERAGE_TIME         1     // average time until next CHANGE
-#define SD_TIME              0.4
+#define SD_TIME              -0.4
 #define MR_TIME              0.2
 
 #define PROXIMITY_RANDOMNESS 1     // change this to add more randomness when someone comes into proximity range
@@ -19,7 +19,8 @@
 #define MIN_MOTOR_CHANGE_MS  100   // how often the motor can be turned on/off in ms
 #define DISTANCE_THRESHOLD   50.0  // distance that triggers the proximity sensor
 
-#define RELAY_PIN            3
+#define RELAYS               4
+#define RELAY_PINS           {3, 4, 5, 6}
 #define PROXIMITY_PIN        A0
 
 /*
@@ -28,7 +29,7 @@
 
 
 float random_float() {
-  return (float)random(10001)/10000.0;
+  return (float)random(1, 10001)/10000.0;
 }
 
 // Uses the Box-Muller transform
@@ -39,29 +40,23 @@ float random_z_float() {
   return z0;
 }
 
-bool motor_is_on = false;
+bool motor_is_on[RELAYS] = {false};
+int relay_pins[RELAYS] = RELAY_PINS;
 
-void motor_state(bool state) {
-  if (state != motor_is_on) {
+void motor_state(bool state, int i) {
+  if (state != motor_is_on[i]) {
     if (state) {
       // ON
-      digitalWrite(RELAY_PIN, HIGH);
+      digitalWrite(relay_pins[i], HIGH);
     } else {
       // OFF
-      digitalWrite(RELAY_PIN, LOW);
+      digitalWrite(relay_pins[i], LOW);
     }
-    motor_is_on = state;
+    motor_is_on[i] = state;
   }
 }
 
-void setup() {
-  Serial.begin(9600);
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-  randomSeed(analogRead(0));
-}
-
-bool proximity_active() {
+float proximity_closeness() {
   // Read the analog value from the sensor
   int sensor_value = analogRead(PROXIMITY_PIN);
 
@@ -71,7 +66,7 @@ bool proximity_active() {
   // Convert the voltage to distance (in cm)
   float distance_cm = (voltage / 0.0098) * 2.54;
 
-  return distance_cm < DISTANCE_THRESHOLD;
+  return distance_cm / DISTANCE_THRESHOLD;
 }
 
 // Movement vector
@@ -85,7 +80,9 @@ struct mov {
 // i.e. stochiastic motion following a normal distribution
 
 float oruhprocess(float prev, float theta, float mu, float deltat, float sigma) {
-  if (proximity_active()) sigma *= PROXIMITY_RANDOMNESS;
+  float closeness = proximity_closeness();
+  sigma *= PROXIMITY_RANDOMNESS * closeness;
+  mu += 0.75 * sigma * closeness;
   return prev + theta * (mu - prev) * deltat + sigma * sqrt(deltat) * random_z_float();
 }
 
@@ -103,25 +100,50 @@ struct mov hop_vec(struct mov vec) {
   return vec;
 }
 
-struct mov gvec = {true, AVERAGE_SPEED_PROP, AVERAGE_TIME};
+struct mov default_gvec = {true, AVERAGE_SPEED_PROP, AVERAGE_TIME};
+struct mov gvecs[RELAYS] = {default_gvec};
+
+unsigned long starts[RELAYS] = {0};
+unsigned long last_changes[RELAYS] = {0};
+
+void setup() {
+  Serial.begin(9600);
+  for (int i = 0; i < RELAYS; i++) {
+    pinMode(relay_pins[i], OUTPUT);
+    digitalWrite(relay_pins[i], LOW);
+    gvecs[i] = default_gvec;
+  }
+  randomSeed(analogRead(0));
+}
 
 void loop() {
-  gvec = hop_vec(gvec);
-  char buf[128];
-  sprintf(buf, "VEC: %d %f %f\n", gvec.active, gvec.proportion, gvec.ttl);
-  Serial.print(buf);
-
-  unsigned long start = millis();
-  unsigned long last_change = 0;
-  while ((millis() - start) < gvec.ttl * 1000) {
-    if ((millis() - last_change) > MIN_MOTOR_CHANGE_MS) {
-      if (gvec.active && random_float() < gvec.proportion) {
-        motor_state(true);
-      } else {
-        motor_state(false);
+  for (int i = 0; i < RELAYS; i++) {
+    // if TTL has expired
+    if ((millis() - starts[i]) > gvecs[i].ttl * 1000) {
+      // get some new values
+      gvecs[i] = hop_vec(gvecs[i]);
+      Serial.print("VEC[");
+      Serial.print(i);
+      Serial.print("]: ");
+      Serial.print(gvecs[i].active);
+      Serial.print(" ");
+      Serial.print(gvecs[i].proportion);
+      Serial.print(" ");
+      Serial.print(gvecs[i].ttl);
+      Serial.print("\n");
+      last_changes[i] = 0;
+      starts[i] = millis();
+    } else {
+      // If it is time to do something new to the motor
+      if ((millis() - last_changes[i]) > MIN_MOTOR_CHANGE_MS) {
+        if (gvecs[i].active && random_float() < gvecs[i].proportion) {
+          motor_state(true, i);
+        } else {
+          motor_state(false, i);
+        }
+        last_changes[i] = millis();
       }
-      last_change = millis();
     }
-    delay(10);
   }
+  delay(5);
 }
