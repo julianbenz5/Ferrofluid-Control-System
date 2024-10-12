@@ -16,7 +16,7 @@
                                    // keep this value fairly low; probably in the range 1-1.3
                                    // 1 is no randomness added
 
-#define MIN_MOTOR_CHANGE_MS  10   // how often the motor can be turned on/off in ms
+#define MIN_MOTOR_CHANGE_MS  100   // how often the motor can be turned on/off in ms
 #define DISTANCE_THRESHOLD   50.0  // distance that triggers the proximity sensor
 
 #define RELAYS               4
@@ -131,7 +131,7 @@ void loop() {
       Serial.print(" ");
       Serial.print(gvecs[i].ttl);
       Serial.print("\n");
-      Serial.print(distance_cm);
+      //Serial.print(distance_cm);
       last_changes[i] = 0;
       starts[i] = millis();
     } else {
