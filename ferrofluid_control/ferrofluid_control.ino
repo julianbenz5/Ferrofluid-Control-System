@@ -65,8 +65,12 @@ float proximity_closeness() {
 
   // Convert the voltage to distance (in cm)
   float distance_cm = (voltage / 0.0098) * 2.54;
+  distance_cm = constrain(distance_cm, 0, DISTANCE_THRESHOLD);
+  Serial.print("SENSOR: ");
+  Serial.print(distance_cm);
+  Serial.print("\n");
 
-  return distance_cm / DISTANCE_THRESHOLD;
+  return (DISTANCE_THRESHOLD - distance_cm) / DISTANCE_THRESHOLD;
 }
 
 // Movement vector
